@@ -1,23 +1,26 @@
 """
-Smart Resume ATS Matcher & Skill Gap Analyzer
------------------------------------------------
+Smart Resume ATS Matcher & Skill Gap Analyzer (Text-only version)
+-------------------------------------------------------------------
 A simple Python + Streamlit web app that:
-1. Reads a resume (PDF or pasted text)
-2. Reads a job description (pasted text)
+1. Takes resume text (pasted directly, no PDF upload needed)
+2. Takes a job description (pasted text)
 3. Extracts skills from both using a keyword-based skill database
-4. Computes an ATS Match Score using TF-IDF + Cosine Similarity
+4. Computes an ATS Match Score using TF-IDF + Cosine Similarity (scikit-learn)
 5. Shows matched skills, missing skills (skill gap) and simple suggestions
+
+Only dependency used for matching/scoring: scikit-learn.
+Author: <Student Name>
 """
 
 import re
-import io
 import streamlit as st
-import pdfplumber
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 # -------------------------------------------------------------------
 # 1. SKILL DATABASE
+# A simple, fixed list of common skills used for keyword matching.
+# This keeps the project "simple Python" (no heavy NLP models).
 # -------------------------------------------------------------------
 SKILL_DB = [
     # Programming languages
@@ -40,28 +43,8 @@ SKILL_DB = [
 
 
 # -------------------------------------------------------------------
-# 2. TEXT EXTRACTION (FIXED FILE POINTER & ERROR HANDLING)
+# 2. TEXT CLEANING
 # -------------------------------------------------------------------
-def extract_text_from_pdf(uploaded_file) -> str:
-    """Extract raw text from an uploaded PDF resume safely."""
-    text = ""
-    try:
-        # Reset file pointer to beginning of stream
-        uploaded_file.seek(0)
-        file_bytes = uploaded_file.read()
-        
-        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
-    except Exception as e:
-        st.error(f"Error reading PDF file: {e}")
-        return ""
-        
-    return text.strip()
-
-
 def clean_text(text: str) -> str:
     """Lowercase and normalise whitespace/punctuation for matching."""
     text = text.lower()
@@ -78,6 +61,7 @@ def extract_skills(text: str) -> set:
     cleaned = clean_text(text)
     found = set()
     for skill in SKILL_DB:
+        # word-boundary-safe search so "r" doesn't match inside other words
         pattern = r"(?<![a-z0-9])" + re.escape(skill) + r"(?![a-z0-9])"
         if re.search(pattern, cleaned):
             found.add(skill)
@@ -85,7 +69,7 @@ def extract_skills(text: str) -> set:
 
 
 # -------------------------------------------------------------------
-# 4. ATS MATCH SCORE (TF-IDF + Cosine Similarity)
+# 4. ATS MATCH SCORE (TF-IDF + Cosine Similarity, scikit-learn only)
 # -------------------------------------------------------------------
 def compute_ats_score(resume_text: str, jd_text: str) -> float:
     """
@@ -94,12 +78,9 @@ def compute_ats_score(resume_text: str, jd_text: str) -> float:
     """
     documents = [clean_text(resume_text), clean_text(jd_text)]
     vectorizer = TfidfVectorizer(stop_words="english")
-    try:
-        tfidf_matrix = vectorizer.fit_transform(documents)
-        similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
-        return round(similarity * 100, 2)
-    except Exception:
-        return 0.0
+    tfidf_matrix = vectorizer.fit_transform(documents)
+    similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+    return round(similarity * 100, 2)
 
 
 def compute_skill_score(matched: set, jd_skills: set) -> float:
@@ -116,49 +97,34 @@ st.set_page_config(page_title="Smart Resume ATS Matcher", page_icon="📄", layo
 
 st.title("📄 Smart Resume ATS Matcher & Skill Gap Analyzer")
 st.write(
-    "Upload your resume and paste a job description to see how well your "
-    "resume matches, which skills you already cover, and which ones you're missing."
+    "Paste your resume text and a job description below to see how well "
+    "your resume matches, which skills you already cover, and which ones "
+    "you're missing."
 )
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("1. Upload Resume")
-    resume_file = st.file_uploader("Upload your resume (PDF)", type=["pdf"])
-    resume_text_input = st.text_area(
-        "…or paste your resume text here instead", height=150
-    )
+    st.subheader("1. Paste Resume Text")
+    resume_text_input = st.text_area("Paste your resume text here", height=280)
 
 with col2:
     st.subheader("2. Paste Job Description")
-    jd_text_input = st.text_area("Paste the job description here", height=260)
+    jd_text_input = st.text_area("Paste the job description here", height=280)
 
 analyze_clicked = st.button("🔍 Analyze Match", type="primary")
 
 if analyze_clicked:
-    resume_text = ""
-    
-    # Priority given to uploaded PDF file
-    if resume_file is not None:
-        resume_text = extract_text_from_pdf(resume_file)
-        # Debug trace (optional: helps you see if text was parsed)
-        if not resume_text:
-            st.warning("⚠️ Could not extract text from the PDF. It may be scanned or image-based.")
-    
-    # Fallback to text box if PDF didn't yield text
-    if not resume_text and resume_text_input.strip():
-        resume_text = resume_text_input.strip()
-
-    if not resume_text or not jd_text_input.strip():
-        st.error("Please provide both a resume (PDF or text) and a job description.")
+    if not resume_text_input.strip() or not jd_text_input.strip():
+        st.error("Please paste both your resume text and a job description.")
     else:
-        resume_skills = extract_skills(resume_text)
+        resume_skills = extract_skills(resume_text_input)
         jd_skills = extract_skills(jd_text_input)
 
         matched_skills = resume_skills & jd_skills
         missing_skills = jd_skills - resume_skills
 
-        ats_text_score = compute_ats_score(resume_text, jd_text_input)
+        ats_text_score = compute_ats_score(resume_text_input, jd_text_input)
         skill_score = compute_skill_score(matched_skills, jd_skills)
         overall_score = round((ats_text_score + skill_score) / 2, 2)
 
@@ -195,4 +161,4 @@ if analyze_clicked:
         )
 
 st.markdown("---")
-st.caption("Built with Python + Streamlit | Smart Resume ATS Matcher & Skill Gap Analyzer")
+st.caption("Built with Python + Streamlit + scikit-learn | Smart Resume ATS Matcher & Skill Gap Analyzer")
