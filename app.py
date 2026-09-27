@@ -7,8 +7,6 @@ A simple Python + Streamlit web app that:
 3. Extracts skills from both using a keyword-based skill database
 4. Computes an ATS Match Score using TF-IDF + Cosine Similarity
 5. Shows matched skills, missing skills (skill gap) and simple suggestions
-
-Author: <Student Name>
 """
 
 import re
@@ -20,8 +18,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 # -------------------------------------------------------------------
 # 1. SKILL DATABASE
-# A simple, fixed list of common skills used for keyword matching.
-# This keeps the project "simple Python" (no heavy NLP models).
 # -------------------------------------------------------------------
 SKILL_DB = [
     # Programming languages
@@ -44,17 +40,26 @@ SKILL_DB = [
 
 
 # -------------------------------------------------------------------
-# 2. TEXT EXTRACTION
+# 2. TEXT EXTRACTION (FIXED FILE POINTER & ERROR HANDLING)
 # -------------------------------------------------------------------
 def extract_text_from_pdf(uploaded_file) -> str:
-    """Extract raw text from an uploaded PDF resume."""
+    """Extract raw text from an uploaded PDF resume safely."""
     text = ""
-    with pdfplumber.open(io.BytesIO(uploaded_file.read())) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-    return text
+    try:
+        # Reset file pointer to beginning of stream
+        uploaded_file.seek(0)
+        file_bytes = uploaded_file.read()
+        
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+    except Exception as e:
+        st.error(f"Error reading PDF file: {e}")
+        return ""
+        
+    return text.strip()
 
 
 def clean_text(text: str) -> str:
@@ -73,7 +78,6 @@ def extract_skills(text: str) -> set:
     cleaned = clean_text(text)
     found = set()
     for skill in SKILL_DB:
-        # word-boundary-safe search so "r" doesn't match inside other words
         pattern = r"(?<![a-z0-9])" + re.escape(skill) + r"(?![a-z0-9])"
         if re.search(pattern, cleaned):
             found.add(skill)
@@ -90,9 +94,12 @@ def compute_ats_score(resume_text: str, jd_text: str) -> float:
     """
     documents = [clean_text(resume_text), clean_text(jd_text)]
     vectorizer = TfidfVectorizer(stop_words="english")
-    tfidf_matrix = vectorizer.fit_transform(documents)
-    similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
-    return round(similarity * 100, 2)
+    try:
+        tfidf_matrix = vectorizer.fit_transform(documents)
+        similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+        return round(similarity * 100, 2)
+    except Exception:
+        return 0.0
 
 
 def compute_skill_score(matched: set, jd_skills: set) -> float:
@@ -129,14 +136,20 @@ with col2:
 analyze_clicked = st.button("🔍 Analyze Match", type="primary")
 
 if analyze_clicked:
-    # Get resume text either from the PDF or the pasted box
     resume_text = ""
+    
+    # Priority given to uploaded PDF file
     if resume_file is not None:
         resume_text = extract_text_from_pdf(resume_file)
-    elif resume_text_input.strip():
-        resume_text = resume_text_input
+        # Debug trace (optional: helps you see if text was parsed)
+        if not resume_text:
+            st.warning("⚠️ Could not extract text from the PDF. It may be scanned or image-based.")
+    
+    # Fallback to text box if PDF didn't yield text
+    if not resume_text and resume_text_input.strip():
+        resume_text = resume_text_input.strip()
 
-    if not resume_text.strip() or not jd_text_input.strip():
+    if not resume_text or not jd_text_input.strip():
         st.error("Please provide both a resume (PDF or text) and a job description.")
     else:
         resume_skills = extract_skills(resume_text)
