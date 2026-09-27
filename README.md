@@ -1,2 +1,4 @@
-# resume-ats-matcher_skill_gap_analyzer
-Smart Resume ATS Matcher &amp; Skill Gap Analyzer — a Python + Streamlit web app that compares a resume against a job description, calculates an ATS match score, and highlights missing skills.
+Smart Resume ATS Matcher & Skill Gap Analyzer
+A simple Python + Streamlit web app that compares a resume against a job
+description and reports an ATS match score, matched skills, and missing
+skills (skill gap).
